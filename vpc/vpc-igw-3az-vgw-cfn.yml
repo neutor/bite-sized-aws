@@ -1,0 +1,451 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Generic VPC with three AZs, 9 Subnets, Route Tables, Nat GWs
+
+Parameters:
+
+  VpcCidrBlock:
+    Description: CIDR address range of new VPC, like 172.25 or 10.0
+    Type: String
+    Default: '172.20'
+
+  DomainName:
+    Description: Optional. domain name to create internal.domain-name private hosted zone
+    Type: String
+
+Mappings:
+
+  SubnetMap:
+    All:
+      PublicA: 0.0/22
+      PublicB: 4.0/22
+      PublicC: 8.0/22
+      PrivateA: 20.0/22
+      PrivateB: 24.0/22
+      PrivateC: 28.0/22
+      RestrictedA: 40.0/22
+      RestrictedB: 44.0/22
+      RestrictedC: 48.0/22
+
+Conditions:
+
+  CreateInternalHostedZone: !Not [!Equals [!Ref 'DomainName', '']]
+
+Resources:
+
+  NewVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Join [., [!Ref 'VpcCidrBlock', 0.0/16]]
+      EnableDnsHostnames: 'true'
+      EnableDnsSupport: 'true'
+      Tags:
+        - Key: Name
+          Value: !Ref 'AWS::StackName'
+
+  InternetGateway:
+    Description: Internet Gateway for the VPC. To be used for DirectConnect or Private
+      Virtual Interfaces
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', igw]]
+
+  IGWAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Description: VPC to Internet Gateway Attachment
+    DependsOn: InternetGateway
+    Properties:
+      InternetGatewayId: !Ref 'InternetGateway'
+      VpcId: !Ref 'NewVpc'
+
+  VPNGateway:
+    Type: AWS::EC2::VPNGateway
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: !Ref 'AWS::StackName'
+      Type: ipsec.1
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref NewVpc
+      VpnGatewayId: !Ref VPNGateway
+
+  VPNGatewayRoutePropagation:
+    Type: AWS::EC2::VPNGatewayRoutePropagation
+    DependsOn: VPCGatewayAttachment
+    Properties: 
+      VpnGatewayId: !Ref VPNGateway
+      RouteTableIds: 
+        - !Ref PrivateRtA
+        - !Ref PrivateRtB
+        - !Ref PrivateRtC
+        - !Ref RestrictedRouteTable
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', public]]
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15S
+
+  PublicRoute:
+    Description: Route to Internet Gateway. Associated with Public A and B subnets
+      only
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'PublicRouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref 'InternetGateway'
+
+  PrivateRtA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', private-a]]
+
+  PrivateRtB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', private-b]]
+
+  PrivateRtC:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', private-c]]
+
+  RestrictedRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', restricted]]
+
+  PublicA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      CidrBlock: !Join [., [!Ref 'VpcCidrBlock', !FindInMap [SubnetMap, All, PublicA]]]
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: 'true'
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', public-a]]
+
+  PublicARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PublicA'
+      RouteTableId: !Ref 'PublicRouteTable'
+
+  PublicB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      CidrBlock: !Join [., [!Ref 'VpcCidrBlock', !FindInMap [SubnetMap, All, PublicB]]]
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: 'true'
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', public-b]]
+
+  PublicBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PublicB'
+      RouteTableId: !Ref 'PublicRouteTable'
+
+  PublicC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      CidrBlock: !Join [., [!Ref 'VpcCidrBlock', !FindInMap [SubnetMap, All, PublicC]]]
+      AvailabilityZone: !Select [2, !GetAZs '']
+      MapPublicIpOnLaunch: 'true'
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', public-c]]
+
+  PublicCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PublicC'
+      RouteTableId: !Ref 'PublicRouteTable'
+
+  PrivateA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      CidrBlock: !Join [., [!Ref 'VpcCidrBlock', !FindInMap [SubnetMap, All, PrivateA]]]
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', private-a]]
+
+  PrivateASubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PrivateA'
+      RouteTableId: !Ref 'PrivateRtA'
+
+  PrivateB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      CidrBlock: !Join [., [!Ref 'VpcCidrBlock', !FindInMap [SubnetMap, All, PrivateB]]]
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', private-b]]
+
+  PrivateBSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PrivateB'
+      RouteTableId: !Ref 'PrivateRtB'
+
+  PrivateC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      CidrBlock: !Join [., [!Ref 'VpcCidrBlock', !FindInMap [SubnetMap, All, PrivateC]]]
+      AvailabilityZone: !Select [2, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', private-c]]
+
+  PrivateCSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PrivateC'
+      RouteTableId: !Ref 'PrivateRtC'
+
+  RestrictedA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      CidrBlock: !Join [., [!Ref 'VpcCidrBlock', !FindInMap [SubnetMap, All, RestrictedA]]]
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', restricted-a]]
+
+  RestrictedASubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'RestrictedA'
+      RouteTableId: !Ref 'RestrictedRouteTable'
+
+  RestrictedB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      CidrBlock: !Join [., [!Ref 'VpcCidrBlock', !FindInMap [SubnetMap, All, RestrictedB]]]
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', restricted-b]]
+
+  RestrictedBSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'RestrictedB'
+      RouteTableId: !Ref 'RestrictedRouteTable'
+
+  RestrictedC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'NewVpc'
+      CidrBlock: !Join [., [!Ref 'VpcCidrBlock', !FindInMap [SubnetMap, All, RestrictedC]]]
+      AvailabilityZone: !Select [2, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'AWS::StackName', restricted-c]]
+
+  RestrictedCSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'RestrictedC'
+      RouteTableId: !Ref 'RestrictedRouteTable'
+
+  NATGatewayAEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NATGatewayBEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NATGatewayCEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NATGatewayA:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt 'NATGatewayAEIP.AllocationId'
+      SubnetId: !Ref 'PublicA'
+
+  NATGatewayB:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt 'NATGatewayBEIP.AllocationId'
+      SubnetId: !Ref 'PublicB'
+
+  NATGatewayC:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt 'NATGatewayCEIP.AllocationId'
+      SubnetId: !Ref 'PublicC'
+
+  PrivateRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'PrivateRtA'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref 'NATGatewayA'
+
+  PrivateRouteB:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'PrivateRtB'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref 'NATGatewayB'
+
+  PrivateRouteC:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'PrivateRtC'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref 'NATGatewayC'
+
+  InternalHostedZone:
+    Type: AWS::Route53::HostedZone
+    Condition: CreateInternalHostedZone
+    Properties:
+      Name: !Join [., [internal, !Ref 'DomainName']]
+      VPCs:
+        - VPCId: !Ref 'NewVpc'
+          VPCRegion: !Ref 'AWS::Region'
+
+Outputs:
+
+  VpcId:
+    Value: !Ref 'NewVpc'
+    Export:
+      Name: !Sub '${AWS::StackName}-VpcId'
+
+  InternetGateway:
+    Value: !Ref 'InternetGateway'
+    Export:
+      Name: !Sub '${AWS::StackName}-InternetGateway'
+
+  VpcCidrBlock:
+    Value: !Ref 'VpcCidrBlock'
+    Export:
+      Name: !Sub '${AWS::StackName}-VpcCidrBlock'
+
+  InternalDomainName:
+    Condition: CreateInternalHostedZone
+    Value: !Join [., [internal, !Ref 'DomainName']]
+    Export:
+      Name: !Sub '${AWS::StackName}-internal-domain-name'
+
+  InternalHostedZoneId:
+    Condition: CreateInternalHostedZone
+    Value: !Ref 'InternalHostedZone'
+    Export:
+      Name: !Sub '${AWS::StackName}-internal-hostedzone-id'
+
+  SubnetPublicA:
+    Value: !Ref 'PublicA'
+    Export:
+      Name: !Sub '${AWS::StackName}-public-a'
+
+  SubnetPublicB:
+    Value: !Ref 'PublicB'
+    Export:
+      Name: !Sub '${AWS::StackName}-public-b'
+
+  SubnetPublicC:
+    Value: !Ref 'PublicC'
+    Export:
+      Name: !Sub '${AWS::StackName}-public-c'
+
+  SubnetPrivateA:
+    Value: !Ref 'PrivateA'
+    Export:
+      Name: !Sub '${AWS::StackName}-private-a'
+
+  SubnetPrivateB:
+    Value: !Ref 'PrivateB'
+    Export:
+      Name: !Sub '${AWS::StackName}-private-b'
+
+  SubnetPrivateC:
+    Value: !Ref 'PrivateC'
+    Export:
+      Name: !Sub '${AWS::StackName}-private-c'
+
+  SubnetRestrictedA:
+    Value: !Ref 'RestrictedA'
+    Export:
+      Name: !Sub '${AWS::StackName}-restricted-a'
+
+  SubnetRestrictedB:
+    Value: !Ref 'RestrictedB'
+    Export:
+      Name: !Sub '${AWS::StackName}-restricted-b'
+
+  SubnetRestrictedC:
+    Value: !Ref 'RestrictedC'
+    Export:
+      Name: !Sub '${AWS::StackName}-restricted-c'
+
+  PublicRouteTable:
+    Value: !Ref 'PublicRouteTable'
+    Export:
+      Name: !Sub '${AWS::StackName}-public-rt'
+
+  PrivateRouteTableA:
+    Value: !Ref 'PrivateRtA'
+    Export:
+      Name: !Sub '${AWS::StackName}-private-rt-a'
+
+  PrivateRouteTableB:
+    Value: !Ref 'PrivateRtB'
+    Export:
+      Name: !Sub '${AWS::StackName}-private-rt-b'
+
+  PrivateRouteTableC:
+    Value: !Ref 'PrivateRtC'
+    Export:
+      Name: !Sub '${AWS::StackName}-private-rt-c'
+
+  RestrictedRouteTable:
+    Value: !Ref 'RestrictedRouteTable'
+    Export:
+      Name: !Sub '${AWS::StackName}-restricted-rt'
+
+  VPNGateway:
+    Value: !Ref 'VPNGateway'
+    Export:
+      Name: !Sub '${AWS::StackName}-vpngateway'
