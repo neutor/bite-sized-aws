@@ -1,0 +1,234 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Static website in S3 with Cloudfront for custom domain name and HTTPS
+
+Parameters:
+
+  DomainName:
+    Description: Website domain name
+    Type: String
+
+  SubDomain:
+    Description: Hosted Zone Id of the domain
+    Type: String
+
+  HostedZoneId:
+    Description: Hosted Zone Id of the domain
+    Type: String
+
+  CreateApex:
+    Type: String
+    Default: 'yes'
+
+  BucketName:
+    Description: Unique name for your S3 Bucket
+    Type: String
+
+Rules:
+
+  OnlyUsEast1:
+    Assertions:
+      - Assert:
+          Fn::Equals:
+            - !Ref AWS::Region
+            - us-east-1
+        AssertDescription: |
+          This template can only be deployed in the us-east-1 region.
+          This is because the ACM Certificate must be created in us-east-1
+
+Conditions:
+
+  CreateApexConfig: !Equals
+    - !Ref CreateApex
+    - 'yes'
+
+Resources:
+
+  S3BucketRoot:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref 'BucketName'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LoggingConfiguration:
+        DestinationBucketName: !Ref 'S3BucketLogs'
+        LogFilePrefix: 'origin/'
+
+  S3BucketLogs:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3BucketRoot
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action: s3:GetObject
+            Principal:
+              Service: 'cloudfront.amazonaws.com'
+            Effect: Allow
+            Resource: !Sub '${S3BucketRoot.Arn}/*'
+            Condition:
+              StringEquals:
+                'AWS:SourceArn': !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Sub '${SubDomain}.${DomainName}'
+          - !If [CreateApexConfig, !Ref DomainName, !Ref 'AWS::NoValue']
+        DefaultCacheBehavior:
+          Compress: true
+          DefaultTTL: 86400
+          ForwardedValues:
+            QueryString: true
+          MaxTTL: 31536000
+          TargetOriginId: !Sub 'S3-${AWS::StackName}-root'
+          ViewerProtocolPolicy: 'redirect-to-https'
+          # Id assigned by AWS to "CORS-with-preflight-and-SecurityHeadersPolicy"
+          ResponseHeadersPolicyId: 'eaab4381-ed33-4a86-88ca-d9558dc6cd63'
+          FunctionAssociations:
+            - EventType: 'viewer-request'
+              FunctionARN: !GetAtt CloudFrontFunction.FunctionMetadata.FunctionARN
+        CustomErrorResponses:
+          - ErrorCachingMinTTL: 60
+            ErrorCode: 404
+            ResponseCode: 404
+            ResponsePagePath: '/404.html'
+          - ErrorCachingMinTTL: 60
+            ErrorCode: 403
+            ResponseCode: 403
+            ResponsePagePath: '/403.html'
+        Enabled: true
+        HttpVersion: 'http2'
+        # DefaultRootObject: 'index.html'
+        IPV6Enabled: true
+        Logging:
+          Bucket: !GetAtt S3BucketLogs.DomainName
+          IncludeCookies: false
+          Prefix: 'cdn/'
+        Origins:
+          - DomainName: !GetAtt S3BucketRoot.DomainName
+            Id: !Sub 'S3-${AWS::StackName}-root'
+            OriginAccessControlId: !Ref OriginAccessControl
+            S3OriginConfig: {}
+        PriceClass: 'PriceClass_All'
+        ViewerCertificate:
+          AcmCertificateArn: !Ref Certificate
+          MinimumProtocolVersion: 'TLSv1.1_2016'
+          SslSupportMethod: 'sni-only'
+      Tags:
+        - Key: Solution
+          Value: ACFS3
+
+  CloudFrontFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: AppendIndexHtmlFunction
+      FunctionConfig: 
+        Comment: Append index.html Function
+        Runtime: cloudfront-js-2.0
+      AutoPublish: true
+      FunctionCode: |
+        function handler(event) {
+            var request = event.request;
+            var uri = request.uri;
+            // Check whether the URI is missing a file name.
+            if (uri.endsWith('/')) {
+                request.uri += 'index.html';
+            } 
+            // Check whether the URI is missing a file extension.
+            else if (!uri.includes('.')) {
+                request.uri += '/index.html';
+            }
+            return request;
+        }
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        # Get a unique ID for the OAC Config name.
+        # Name must be unique within account
+        Name: !Sub
+          - amzn-secure-static-site-${guid}
+          - guid: !Select [2, !Split ['/', !Ref 'AWS::StackId']]
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Route53RecordSetGroup:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Sub '${DomainName}.'
+      RecordSets:
+        - Name: !Sub '${SubDomain}.${DomainName}'
+          Type: 'A'
+          AliasTarget:
+            DNSName: !GetAtt 'CloudFrontDistribution.DomainName'
+            EvaluateTargetHealth: false
+            # The  following HosteZoneId is always used for alias records pointing to CF.
+            HostedZoneId: 'Z2FDTNDATAQYW2'
+
+  ApexRoute53RecordSetGroup:
+    Condition: CreateApexConfig
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Sub '${DomainName}.'
+      RecordSets:
+        - Name: !Ref 'DomainName'
+          Type: 'A'
+          AliasTarget:
+            DNSName: !GetAtt 'CloudFrontDistribution.DomainName'
+            EvaluateTargetHealth: false
+            # The  following HosteZoneId is always used for alias records pointing to CF.
+            HostedZoneId: 'Z2FDTNDATAQYW2'
+
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub '${SubDomain}.${DomainName}'
+      SubjectAlternativeNames:
+        Fn::If:
+          - CreateApexConfig
+          - - Ref: DomainName
+          - Ref: AWS::NoValue
+      DomainValidationOptions:
+        - DomainName: !Sub '${SubDomain}.${DomainName}'
+          HostedZoneId: !Ref HostedZoneId
+        - Fn::If:
+            - CreateApexConfig
+            - DomainName: !Ref DomainName
+              HostedZoneId: !Ref HostedZoneId
+            - Ref: AWS::NoValue
+      ValidationMethod: DNS
+
+
+
+
+
+# https://docs.aws.amazon.com/AmazonS3/latest/userguide/website-hosting-custom-domain-walkthrough.html
+# https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/getting-started-secure-static-website-cloudformation-template.html
+# https://github.com/aws-samples/amazon-cloudfront-secure-static-site/blob/master/templates/cloudfront-site.yaml
+
+# https://content-security-policy.com
+
+# https://docs.aws.amazon.com/AmazonS3/latest/userguide/website-hosting-custom-domain-walkthrough.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-s3-bucket.html
+
