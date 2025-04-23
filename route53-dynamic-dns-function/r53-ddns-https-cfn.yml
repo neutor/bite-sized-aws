@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates lambda function with invocation URL to update IP address in Route53
+
+Parameters:
+
+  DnsRecordName:
+    Type: String
+    Description: Domain name to set new IP address for, like "myhome.mydomain.net", no dot at the end
+
+  HostedZoneId:
+    Type: String
+    Description: AWS Hosted Zone Id of your domain, like "GTTYS65DF65HYT"
+
+  SecretParameter:
+    Type: String
+    Description: Additional secret string to include in invocation URL 
+
+Resources:
+
+  LambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Ref 'AWS::StackName'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: update-r53-recordset
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'route53:ChangeResourceRecordSets'
+                  # - 'route53:GetHostedZone'
+                  # - 'route53:ListResourceRecordSets'
+                Resource: !Sub "arn:aws:route53:::hostedzone/${HostedZoneId}"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref 'AWS::StackName'
+      Runtime: python3.13
+      Role: !GetAtt LambdaRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          dns_record_name: !Ref DnsRecordName
+          hosted_zone_id: !Ref HostedZoneId
+          secret_parameter: !Ref SecretParameter
+      Code:
+        ZipFile: |
+          import boto3, os, sys
+          def handler(event, context):
+            dns_name = os.environ['dns_record_name']
+            zone_id = os.environ['hosted_zone_id']
+            route53 = boto3.client('route53')
+            newip = event.get('queryStringParameters', {}).get('newip')
+            secret = event.get('queryStringParameters', {}).get('secret')
+            if not newip or not secret:
+                msg = 'Missing parameters, use ?newip=1.2.3.9&secret=hellokitty in URL'
+                print(msg)
+                return msg
+            if secret != os.environ['secret_parameter']:
+                msg = 'Secret mismatch, aborting'
+                print(msg)
+                return msg
+            print(f'Updating {dns_name} IP to {newip}')
+            route53.change_resource_record_sets(
+                HostedZoneId=zone_id,
+                ChangeBatch={'Changes': [{'Action': 'UPSERT', 'ResourceRecordSet': {
+                    'Name': dns_name+'.', 'Type': 'A', 'TTL': 300,
+                    'ResourceRecords': [{'Value': newip}] }}]}  )
+            return 'OK'
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      FunctionUrlAuthType: 'NONE'
+      Action: 'lambda:invokeFunctionUrl'
+      Principal: '*'
+
+  LambdaUrl:
+    DependsOn: LambdaPermission
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: 'NONE'
+      InvokeMode: 'BUFFERED'
+      TargetFunctionArn: !GetAtt LambdaFunction.Arn
+
+Outputs:
+
+  FunctionUrl:
+    Description: HTTPS URL to invoke the lambda
+    Value: !GetAtt LambdaUrl.FunctionUrl

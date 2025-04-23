@@ -13,7 +13,7 @@ import sys
 import json
 from pathlib import Path
 
-root_profile = 'finance'
+root_profile = 'myroot'  # cli profile of AWS Organisations root account
 region = 'ap-southeast-2'
 
 def get_session(account):
