@@ -18,7 +18,7 @@ Template creates NAT Gateways in every public subnet, and private subnets will h
 The level 3 subnets, `restricted-a`, `restricted-b`, have neither outbound nor inbound access to Internet.
 
 Level 3 subnets, `restricted`, are for persistence stores: databases, cache clusters, data pipelines.
-These subnets are allowed access only from and to level 2, `private` subnets of the same vpc stack (same environment), using ACLs, applied to them. This feature exists in `-menv` template.
+Resources in these subnets have no default route, which makes them unable to access internet.
 
 Additional security is achieved by using Security Groups, which are Not part of this template, and must be created and configured in application stacks.
 
