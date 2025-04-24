@@ -3,6 +3,8 @@
 
 This template creates AWS infrastructure needed to host a static website. The helper Bash script is an example of publishing the website content from local machine.
 
+Note: you need to have AWS Route53 Hosted Zone already created for the domain. Copy its "Hosted Zone Id" to use later.
+
 ## Features:
 
 - SSL Certificate, HTTPS
