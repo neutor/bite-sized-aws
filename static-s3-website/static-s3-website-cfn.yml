@@ -8,7 +8,7 @@ Parameters:
     Type: String
 
   SubDomain:
-    Description: Hosted Zone Id of the domain
+    Description: Website subdomain
     Type: String
 
   HostedZoneId:
@@ -62,6 +62,7 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
+      BucketName: !Sub '${BucketName}-logs'
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerPreferred
@@ -219,7 +220,11 @@ Resources:
             - Ref: AWS::NoValue
       ValidationMethod: DNS
 
+Outputs:
 
+  DistributionId:
+    Description: Id of created CloudFront Distribution
+    Value: !Ref CloudFrontDistribution
 
 
 
