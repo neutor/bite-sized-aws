@@ -7,7 +7,8 @@ This template creates AWS infrastructure needed to host a static website. The he
 
 - SSL Certificate, HTTPS
 - Custom Domain name
-- One click deployment using AWS Console and any browser.
+- One click deployment using AWS Console and any browser
+- A CloudFront Function to append /index.html - fixes CloudFront errors with clean (tidy) website links
 
 ## Deployment
 

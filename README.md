@@ -1,5 +1,7 @@
 # Bite-sized AWS - simple but useful templates for common things
 
+Handcrafted with love CloudFormation templates and Python apps for simple, standalone tasks. Idea is similar to concept of the Unix philosophy - "Do one thing and do it well."
+
 Most folders are standalone Cloudformation template to deploy the thing or a single python script to do the task.
 
 The template has Parameters you need to fill. Go to AWS Console / Cloudformation and press "Create Stack". Use "new resources" and "upload template". 
