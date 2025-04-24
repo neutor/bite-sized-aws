@@ -14,16 +14,16 @@ The scripts may have some default settings, change it before running. You need t
 Static website in S3 with Cloudfront for custom domain name and HTTPS
 
 
-## vpc
+## [vpc](vpc)
 
 Typical AWS VPC, 3 AZs by 3 layers, suitable for most projects
 
 
-## route53-dynamic-dns-function
+## [route53-dynamic-dns-function](route53-dynamic-dns-function)
 
 Dynamic DNS with Route53 using AWS Lambda function invoked with simple HTTPS request.
 
 
-## tools
+## [tools](tools)
 
 Python script to do one specific task. Uses Boto3 to talk to AWS
