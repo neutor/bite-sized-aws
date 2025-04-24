@@ -2,11 +2,11 @@
 
 Handcrafted with love CloudFormation templates and Python apps for simple, standalone tasks. Idea is similar to concept of the Unix philosophy - "Do one thing and do it well."
 
-Most folders are standalone Cloudformation template to deploy the thing or a single python script to do the task.
+Most folders are standalone Cloudformation templates to deploy the thing or a single python script to do the task.
 
 The template has Parameters you need to fill. Go to AWS Console / Cloudformation and press "Create Stack". Use "new resources" and "upload template". 
 
-The script will have some default settings to set before running. You need to setup your AWS CLI with profile(s), even if it is a single account.
+The scripts may have some default settings, change it before running. You need to setup your AWS CLI with profile(s), even if it is a single account.
 
 ## static-s3-website    
 
