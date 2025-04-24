@@ -6,9 +6,10 @@ Most folders are standalone Cloudformation templates to deploy the thing or a si
 
 The template has Parameters you need to fill. Go to AWS Console / Cloudformation and press "Create Stack". Use "new resources" and "upload template". 
 
-The scripts may have some default settings, change it before running. You need to setup your AWS CLI with profile(s), even if it is a single account.
+The scripts may have some default settings, change it before running. You need to have AWS CLI configured with credentials.
 
-## static-s3-website    
+
+## [static-s3-website](static-s3-website)
 
 Static website in S3 with Cloudfront for custom domain name and HTTPS
 
