@@ -12,7 +12,7 @@ This template creates AWS infrastructure needed to host a static website. The he
 
 ## Deployment
 
-1. Login to AWS Console, go Cloudformation (CFN) / Stacks / Create Stack
+1. Login to AWS Console, change Region to "us-east-1" (N.Virginia), go Cloudformation (CFN) / Stacks / Create Stack
 2. Upload the Template from file, fill the parameters of the CFN template, each has a Description to help you
 3. Proceed to create the Stack, wait till Stack creation is complete.
 4. Write down the value of DistributionId in Stack Outputs in AWS Console. 
